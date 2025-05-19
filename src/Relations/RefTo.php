@@ -2,12 +2,9 @@
 
 namespace MongoDB\Laravel\Relations;
 
-
-use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use \Illuminate\Database\Eloquent\Relations\BelongsTo;
-
-use MongoDB\Laravel\Eloquent\InteractsWithBson;
 
 use function array_map;
 
@@ -16,42 +13,26 @@ use function array_map;
  * @template TDeclaringModel of Model
  * @extends BelongsTo<TRelatedModel, TDeclaringModel>
  */
-class RefTo extends BelongsTo
+class RefTo extends RefToOrMany
 {
-    use InteractsWithBson;
-
-    /**
-     * The reference type
-     *
-     * @var string|null
-     */
-    protected $referenceType;
-
-    /**
-     * @inheritDoc
-     *
-     * @param \Illuminate\Database\Eloquent\Builder<TRelatedModel> $query
-     * @param TDeclaringModel $child
-     * @param string|null $referenceType
-     * @param string $foreignKey
-     * @param string $ownerKey
-     * @param string $relationName
-     */
-    public function __construct(Builder $query, Model $child, $referenceType, $foreignKey, $ownerKey, $relationName)
+    /** @inheritDoc */
+    public function initRelation(array $models, $relation)
     {
-        $this->referenceType = $this->getReferenceType($referenceType);
+        foreach ($models as $model) {
+            $model->setRelation($relation, $this->getDefaultFor($model));
+        }
 
-        parent::__construct($query, $child, $foreignKey, $ownerKey, $relationName);
+        return $models;
     }
 
-    /**
-     * Get the key for comparing against the parent key in "has" query.
-     *
-     * @return string
-     */
-    public function getHasCompareKey()
+    /** @inheritDoc */
+    public function getResults()
     {
-        return $this->ownerKey;
+        if (is_null($this->getForeignKeyFrom($this->child))) {
+            return $this->getDefaultFor($this->parent);
+        }
+
+        return $this->query->first() ?: $this->getDefaultFor($this->parent);
     }
 
     /**
@@ -71,13 +52,9 @@ class RefTo extends BelongsTo
 
     /**
      * @inheritDoc
-     * @return void
      */
     public function addEagerConstraints(array $models)
     {
-        // We'll grab the primary key name of the related models since it could be set to
-        // a non-standard name and not "id". We will then construct the constraint for
-        // our eagerly loading query so it returns the proper models from execution.
         $key = $this->getOwnerKeyName();
 
         $whereIn = $this->whereInMethod($this->related, $this->ownerKey);
@@ -89,8 +66,54 @@ class RefTo extends BelongsTo
     }
 
     /**
-     * @inheritDoc
-     * @return TDeclaringModel
+     * @param array $models
+     * @return array
+     */
+    protected function getEagerModelKeys(array $models)
+    {
+        $keys = [];
+
+        foreach ($models as $model) {
+            if (! is_null($value = $this->getForeignKeyFrom($model))) {
+                $keys[] = $value;
+            }
+        }
+
+        sort($keys);
+
+        return array_values(array_unique($keys));
+    }
+
+    /**
+     * @param array $models
+     * @param EloquentCollection $results
+     * @param $relation
+     * @return array
+     */
+    public function match(array $models, EloquentCollection $results, $relation)
+    {
+        $dictionary = [];
+
+        foreach ($results as $result) {
+            $attribute = $this->getDictionaryKey($this->getRelatedKeyFrom($result));
+
+            $dictionary[$attribute] = $result;
+        }
+
+        foreach ($models as $model) {
+            $attribute = $this->getDictionaryKey($this->getForeignKeyFrom($model));
+
+            if (isset($dictionary[$attribute])) {
+                $model->setRelation($relation, $dictionary[$attribute]);
+            }
+        }
+
+        return $models;
+    }
+
+    /**
+     * @param $model
+     * @return Model
      */
     public function associate($model)
     {
@@ -129,15 +152,5 @@ class RefTo extends BelongsTo
     protected function whereInMethod(Model $model, $key)
     {
         return 'whereIn';
-    }
-
-    /**
-     * @inheritDoc
-     *
-     * @return string
-     */
-    public function getQualifiedForeignKeyName(): string
-    {
-        return $this->getForeignKeyName();
     }
 }
