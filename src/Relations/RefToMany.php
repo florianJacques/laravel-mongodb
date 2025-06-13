@@ -5,7 +5,7 @@ namespace MongoDB\Laravel\Relations;
 
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
-use \Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 use Illuminate\Support\Arr;
 
@@ -162,7 +162,7 @@ class RefToMany extends RefToOrMany
     {
         $ids = array_map(function ($key) {
             return $this->getDictionaryKey($key);
-        }, $this->getIdsArrayFrom($ids));
+        }, Arr::wrap($this->getIdsArrayFrom($ids)));
 
         $foreignIds = array_map(function ($key) {
             return $this->getDictionaryKey($key);
@@ -176,7 +176,7 @@ class RefToMany extends RefToOrMany
 
         $modelKeys = array_map(function ($key) {
             return $this->getReference($key);
-        }, $foreignIds);
+        }, array_values($foreignIds));
 
         if (empty($modelKeys)) {
             unset($this->child->{$this->getForeignKeyName()});
